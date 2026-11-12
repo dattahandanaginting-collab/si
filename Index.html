@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AOCC Server Room - Access Control</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0b1220; font-family: "Segoe UI", Arial, sans-serif; color: #e6edf7; padding: 12px 0; }
+  body.flash-bad { animation: flashBad .8s; }
+  body.flash-ok  { animation: flashOk 1s; }
+  @keyframes flashBad { 0%,100% { background:#0b1220 } 15%,55% { background:#5a0b0b } 35%,75% { background:#2a0606 } }
+  @keyframes flashOk  { 0%,100% { background:#0b1220 } 30%,70% { background:#0b3d1c } }
+
+  .panel { width: 360px; max-width: 96vw; padding: 20px; border-radius: 18px; background: linear-gradient(160deg, #2b3445, #161c28); border: 2px solid #3a455a; box-shadow: 0 20px 50px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08); }
+  .panel.shake { animation: shake .7s cubic-bezier(.36,.07,.19,.97) both; border-color: #ff3b3b; }
+  @keyframes shake { 10%,90% { transform: translate3d(-3px,0,0) rotate(-.5deg); } 20%,80% { transform: translate3d(6px,0,0) rotate(.6deg); } 30%,50%,70% { transform: translate3d(-10px,0,0) rotate(-1deg); } 40%,60% { transform: translate3d(10px,0,0) rotate(1deg); } }
+
+  .clock { text-align: center; margin-bottom: 8px; }
+  .clock .time { font-family: "Courier New", monospace; font-size: 28px; font-weight: 700; color: #7CFFB2; letter-spacing: 2px; }
+  .clock .date { font-size: 12px; color: #8fa3c4; margin-top: 2px; }
+  .title { text-align: center; font-size: 13px; letter-spacing: 2px; color: #8fa3c4; }
+  .subtitle { text-align: center; font-size: 11px; color: #e0b341; margin: 2px 0 10px; letter-spacing: 1px; }
+
+  .cam { position: relative; border-radius: 8px; overflow: hidden; background: #000; border: 2px solid #2a3447; aspect-ratio: 4/3; }
+  .cam video, .cam canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  .camstatus { font-size: 10px; letter-spacing: 1px; color: #6fbf8b; text-align: center; margin: 5px 0 10px; min-height: 14px; }
+  .camstatus.err { color: #ff6a5e; }
+
+  .screen { background: #0c1f14; border: 3px inset #1d2b22; border-radius: 8px; padding: 12px; text-align: center; min-height: 118px; }
+  .screen .label { font-size: 12px; color: #6fbf8b; letter-spacing: 1px; }
+  .pin { font-family: "Courier New", monospace; font-size: 32px; letter-spacing: 12px; color: #7CFFB2; margin: 8px 0 4px; min-height: 40px; text-indent: 12px; }
+  .msg { font-weight: 700; font-size: 17px; min-height: 22px; letter-spacing: 1px; }
+  .msg.ok  { color: #22e05a; }
+  .msg.bad { color: #ff3b3b; animation: blink .35s 4; }
+  .msg.wait{ color: #e0b341; font-size: 13px; }
+  .sub { font-size: 13px; color: #9fe8b8; min-height: 16px; margin-top: 2px; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+  .key { height: 54px; border-radius: 8px; border: 1px solid #0a0d14; cursor: pointer; font-size: 22px; font-weight: 700; color: #1b2230; background: linear-gradient(#e9eef6, #aab4c4); box-shadow: 0 4px 0 #5d6779, 0 6px 8px rgba(0,0,0,.5); transition: transform .05s, box-shadow .05s; }
+  .key:active { transform: translateY(3px); box-shadow: 0 1px 0 #5d6779; }
+  .key.clear  { background: linear-gradient(#ffd54a, #d9a500); font-size: 13px; box-shadow: 0 4px 0 #8a6a00, 0 6px 8px rgba(0,0,0,.5); }
+  .key.enter  { background: linear-gradient(#4be06f, #1fa244); font-size: 13px; color: #06210f; box-shadow: 0 4px 0 #0f6129, 0 6px 8px rgba(0,0,0,.5); }
+  .key.cancel { background: linear-gradient(#ff6a5e, #c4261a); font-size: 13px; color: #fff; box-shadow: 0 4px 0 #7a140c, 0 6px 8px rgba(0,0,0,.5); }
+  .key:disabled { opacity: .45; cursor: not-allowed; }
+
+  .history { margin-top: 16px; background: #0f1522; border: 1px solid #2a3447; border-radius: 8px; padding: 10px; }
+  .history h4 { margin: 0 0 6px; font-size: 11px; letter-spacing: 1.5px; color: #8fa3c4; display: flex; justify-content: space-between; align-items: center; }
+  .mini { background: none; border: 1px solid #3a455a; color: #8fa3c4; border-radius: 4px; font-size: 10px; padding: 3px 7px; cursor: pointer; }
+  .history table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .history td { padding: 4px 3px; border-top: 1px solid #1d2638; }
+  .history td.w { color: #9fb0cc; font-family: "Courier New", monospace; white-space: nowrap; }
+  .st-ok { color: #22e05a; font-weight: 700; } .st-bad { color: #ff5c5c; font-weight: 700; } .st-alarm { color: #ffc13b; font-weight: 700; } .st-info { color: #6cb6ff; font-weight: 700; }
+  .empty { color: #6b7b96; font-size: 11px; text-align: center; padding: 6px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 10px; color: #6b7b96; letter-spacing: 1px; }
+
+  #admin input { width: 100%; padding: 9px; margin: 6px 0; border-radius: 6px; border: 1px solid #3a455a; background: #0f1522; color: #e6edf7; font-size: 14px; }
+  #admin .btn { width: 100%; padding: 10px; margin: 4px 0; border-radius: 6px; border: none; cursor: pointer; font-weight: 700; background: #1fa244; color: #06210f; }
+  #admin .btn.sec { background: #3a455a; color: #e6edf7; }
+  .nm { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 5px 0; border-top: 1px solid #22402d; text-align: left; }
+  .nm button { background: #c4261a; color: #fff; border: none; border-radius: 4px; font-size: 10px; padding: 3px 8px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div class="panel" id="panel">
+    <div class="clock">
+      <div class="time" id="jam">--:--:--</div>
+      <div class="date" id="tanggal">&nbsp;</div>
+    </div>
+    <div class="title">AOCC SERVER ROOM</div>
+    <div class="subtitle">SECURITY RESTRICTED AREA</div>
+
+    <div class="cam"><video id="video" autoplay muted playsinline></video><canvas id="overlay"></canvas></div>
+    <div class="camstatus" id="camStatus">MEMULAI KAMERA...</div>
+
+    <div id="keypadArea">
+      <div class="screen">
+        <div class="label" id="label">LANGKAH 1/2 - MASUKKAN PIN 4 DIGIT</div>
+        <div class="pin" id="pin"></div>
+        <div class="msg" id="msg"></div>
+        <div class="sub" id="sub"></div>
+      </div>
+      <div class="pad">
+        <button class="key" data-k="1">1</button><button class="key" data-k="2">2</button><button class="key" data-k="3">3</button>
+        <button class="key" data-k="4">4</button><button class="key" data-k="5">5</button><button class="key" data-k="6">6</button>
+        <button class="key" data-k="7">7</button><button class="key" data-k="8">8</button><button class="key" data-k="9">9</button>
+        <button class="key cancel" data-k="cancel">BATAL</button><button class="key" data-k="0">0</button><button class="key enter" data-k="enter">SUBMIT</button>
+      </div>
+      <div class="pad" style="grid-template-columns:1fr; margin-top:10px">
+        <button class="key clear" data-k="clear">HAPUS</button>
+      </div>
+    </div>
+
+    <div id="admin" style="display:none">
+      <div class="screen">
+        <div class="label">PANEL ADMIN - DAFTAR WAJAH</div>
+        <div id="admLogin">
+          <input type="password" id="inAdmin" placeholder="Kode admin" autocomplete="off">
+          <button class="btn" id="btnAdmLogin" type="button">MASUK</button>
+        </div>
+        <div id="admMenu" style="display:none">
+          <input type="text" id="inNama" placeholder="Nama pegawai yang didaftarkan" maxlength="40" autocomplete="off">
+          <button class="btn" id="btnDaftar" type="button">DAFTARKAN WAJAH (SCAN KAMERA)</button>
+          <div id="admList"></div>
+        </div>
+        <div class="msg" id="admMsg" style="margin-top:6px"></div>
+      </div>
+      <button class="btn sec" id="btnTutupAdmin" type="button">KEMBALI KE KEYPAD</button>
+    </div>
+
+    <div class="history">
+      <h4><span>RIWAYAT AKSES TERAKHIR</span><button class="mini" id="btnSuara" type="button">SUARA: ON</button></h4>
+      <table><tbody id="riwayat"><tr><td class="empty" colspan="2">Memuat riwayat...</td></tr></tbody></table>
+    </div>
+    <div class="foot"><span>SEMUA AKTIVITAS DICATAT</span><button class="mini" id="btnAdmin" type="button">ADMIN</button></div>
+  </div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
+<script>
+/* ===================== KONFIGURASI ===================== */
+// Isi dengan URL Web App Apps Script (berakhiran /exec) jika halaman ini DI-HOSTING di luar Apps Script.
+// Jika halaman dibuka dari dalam Apps Script, google.script.run dipakai otomatis dan URL ini diabaikan.
+const API_URL = 'https://script.google.com/macros/s/AKfycbxm3QsI-jv6dSLzozD9l9BWqEXkZn9xZvqCQnNaVUx6lh2zNHL4SouDUHMjLMOsJ0Q7/exec';
+
+const MAX = 4;                    // jumlah digit PIN
+const WAJIB_KEDIP = true;         // true = wajib berkedip saat scan (anti foto cetak). false = nonaktif
+const WAKTU_SCAN_MS = 20000;      // batas waktu Face ID
+const JUMLAH_SAMPEL = 5;          // sampel wajah saat pendaftaran
+const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/model/';
+
+/* ===================== PEMANGGIL SERVER ===================== */
+function panggil(fn, args) {
+  return new Promise(function (resolve, reject) {
+    if (window.google && google.script && google.script.run) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn].apply(null, args);
+      return;
+    }
+    if (API_URL.indexOf('GANTI_') === 0) { reject(new Error('API_URL belum diisi')); return; }
+    fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn: fn, args: args }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (j.error) reject(new Error(j.error)); else resolve(j.result); })
+      .catch(reject);
+  });
+}
+
+/* ===================== STATE ===================== */
+let pin = '', busy = false, resetTimer = null, suaraOn = true, audioCtx = null;
+let mode = 'PIN';                 // PIN | FACE | ENROLL
+let token = null, adminToken = null;
+let modelsReady = false, kameraOn = false, optDet = null, sibuk = false, jumlahWajah = 0;
+let kamTeks = 'MEMULAI KAMERA...', aiTeks = 'MEMUAT MODEL AI...', kamError = false, aiError = false;
+let scan = { buf: [], kedip: false, baseline: 0, start: 0, kirim: false };
+let daftar = { nama: '', samples: [], last: 0, start: 0 };
+
+const $ = function (id) { return document.getElementById(id); };
+const video = $('video'), overlay = $('overlay'), elPin = $('pin'), elMsg = $('msg'), elPanel = $('panel');
+const keys = document.querySelectorAll('.key');
+
+/* ===================== JAM ===================== */
+function updateJam() {
+  const now = new Date();
+  $('jam').textContent = now.toLocaleTimeString('id-ID', { hour12: false, timeZone: 'Asia/Jayapura' }).replace(/\./g, ':') + ' WIT';
+  $('tanggal').textContent = now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Jayapura' });
+}
+updateJam(); setInterval(updateJam, 1000);
+
+/* ===================== SUARA ===================== */
+function beep(freq, dur, type, delay) {
+  if (!suaraOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = type; o.frequency.value = freq; g.gain.value = 0.08;
+    o.connect(g); g.connect(audioCtx.destination);
+    const t = audioCtx.currentTime + (delay || 0);
+    o.start(t); o.stop(t + dur);
+  } catch (e) {}
+}
+function bicara(teks) {
+  if (!suaraOn || !('speechSynthesis' in window)) return;
+  try {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(teks);
+    u.lang = 'id-ID'; u.rate = 0.9;
+    const v = speechSynthesis.getVoices().find(function (x) { return x.lang && x.lang.toLowerCase().indexOf('id') === 0; });
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+$('btnSuara').addEventListener('click', function () {
+  suaraOn = !suaraOn; this.textContent = 'SUARA: ' + (suaraOn ? 'ON' : 'OFF');
+  if (!suaraOn && 'speechSynthesis' in window) speechSynthesis.cancel();
+});
+if ('speechSynthesis' in window) speechSynthesis.getVoices();
+
+/* ===================== EFEK ===================== */
+function efek(cls, el, ms) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); setTimeout(function () { el.classList.remove(cls); }, ms); }
+function efekSalah() { efek('shake', elPanel, 800); efek('flash-bad', document.body, 900); }
+function efekBenar() { efek('flash-ok', document.body, 1100); }
+
+/* ===================== RIWAYAT ===================== */
+function renderRiwayat(list) {
+  const tb = $('riwayat'); tb.textContent = '';
+  if (!list || !list.length) {
+    const tr = document.createElement('tr'), td = document.createElement('td');
+    td.className = 'empty'; td.colSpan = 2; td.textContent = 'Belum ada riwayat'; tr.appendChild(td); tb.appendChild(tr); return;
+  }
+  list.forEach(function (h) {
+    const tr = document.createElement('tr'), st = String(h.status);
+    const w = document.createElement('td'); w.className = 'w'; w.textContent = h.waktu;
+    const s = document.createElement('td'); s.textContent = st;
+    s.className = st.indexOf('AKSES DITERIMA') === 0 ? 'st-ok' : (st.indexOf('ALARM') === 0 ? 'st-alarm' : ((st.indexOf('PIN BENAR') === 0 || st.indexOf('ADMIN') === 0 || st.indexOf('TES') === 0) ? 'st-info' : 'st-bad'));
+    tr.appendChild(w); tr.appendChild(s); tb.appendChild(tr);
+  });
+}
+function muatRiwayat() { panggil('getHistory', []).then(renderRiwayat).catch(function () { renderRiwayat([]); }); }
+
+/* ===================== KAMERA & MODEL AI ===================== */
+function updateStatus() {
+  const p = [kamTeks, aiTeks];
+  if (kameraOn && modelsReady) p.push(jumlahWajah + ' WAJAH TERDETEKSI');
+  $('camStatus').textContent = p.join(' • ');
+  $('camStatus').className = 'camstatus' + ((kamError || aiError) ? ' err' : '');
+}
+async function mulaiKamera() {
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw { name: 'TIDAK DIDUKUNG / BUKAN HTTPS' };
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }, audio: false });
+    video.srcObject = stream; await video.play();
+    kameraOn = true; kamError = false; kamTeks = 'KAMERA AKTIF';
+  } catch (e) {
+    kameraOn = false; kamError = true; kamTeks = 'KAMERA GAGAL: ' + (e && e.name ? e.name : 'ERROR');
+  }
+  updateStatus();
+}
+async function muatModel() {
+  if (typeof faceapi === 'undefined') { aiError = true; aiTeks = 'MODEL AI GAGAL DIMUAT (CDN)'; updateStatus(); return; }
+  try {
+    try { await faceapi.tf.ready(); } catch (e) {}
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+    ]);
+    optDet = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 });
+    modelsReady = true; aiError = false; aiTeks = 'AI SIAP';
+  } catch (e) { aiError = true; aiTeks = 'MODEL AI GAGAL DIMUAT'; }
+  updateStatus();
+}
+function gambar(boxes, warna) {
+  if (!video.videoWidth) return;
+  if (overlay.width !== video.videoWidth) { overlay.width = video.videoWidth; overlay.height = video.videoHeight; }
+  const g = overlay.getContext('2d'); g.clearRect(0, 0, overlay.width, overlay.height);
+  g.lineWidth = 3; g.strokeStyle = warna;
+  boxes.forEach(function (b) { g.strokeRect(b.x, b.y, b.width, b.height); });
+}
+function ambilSnapshot() {
+  if (!kameraOn || !video.videoWidth) return '';
+  const w = 320, h = Math.round(320 * video.videoHeight / video.videoWidth);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  c.getContext('2d').drawImage(video, 0, 0, w, h);
+  return c.toDataURL('image/jpeg', 0.7);
+}
+
+/* ===================== LOOP DETEKSI ===================== */
+async function loop() {
+  if (modelsReady && kameraOn && video.readyState >= 2 && !sibuk) {
+    sibuk = true;
+    try { await prosesFrame(); } catch (e) { console.error(e); }
+    sibuk = false;
+  }
+  setTimeout(loop, mode === 'PIN' ? 700 : 200);
+}
+async function prosesFrame() {
+  const now = Date.now();
+  if (mode === 'FACE' && !scan.kirim && now - scan.start > WAKTU_SCAN_MS) { akhiriFace('WAKTU HABIS - ULANGI PIN'); return; }
+  if (mode === 'ENROLL' && now - daftar.start > 40000) { mode = 'PIN'; setAdminMsg('WAKTU HABIS, ULANGI PENDAFTARAN', 'bad'); return; }
+
+  if (mode === 'PIN') {                       // pengawasan: deteksi wajah saja
+    const dets = await faceapi.detectAllFaces(video, optDet);
+    jumlahWajah = dets.length;
+    gambar(dets.map(function (d) { return d.box; }), '#e0b341'); updateStatus(); return;
+  }
+  const r = await faceapi.detectSingleFace(video, optDet).withFaceLandmarks().withFaceDescriptor();
+  jumlahWajah = r ? 1 : 0;
+  gambar(r ? [r.detection.box] : [], mode === 'FACE' ? '#22e05a' : '#4aa8ff'); updateStatus();
+  if (!r) { if (mode === 'FACE' && !scan.kirim) setMsg('WAJAH TIDAK TERDETEKSI - HADAP KAMERA', 'wait'); return; }
+  if (mode === 'FACE') prosesScan(r); else if (mode === 'ENROLL') prosesDaftar(r);
+}
+
+/* ===================== FACE ID (LANGKAH 2) ===================== */
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function eyeEAR(p) { return (dist(p[1], p[5]) + dist(p[2], p[4])) / (2 * dist(p[0], p[3])); }
+function rata(buf) {
+  const n = buf.length, out = new Array(128).fill(0);
+  buf.forEach(function (d) { for (let i = 0; i < 128; i++) out[i] += d[i] / n; });
+  return out;
+}
+function prosesScan(r) {
+  if (scan.kirim) return;
+  const ear = (eyeEAR(r.landmarks.getLeftEye()) + eyeEAR(r.landmarks.getRightEye())) / 2;
+  if (ear > scan.baseline) scan.baseline = ear;
+  if (scan.baseline > 0 && ear < scan.baseline * 0.72) scan.kedip = true;
+  scan.buf.push(Array.from(r.descriptor)); if (scan.buf.length > 3) scan.buf.shift();
+  if (WAJIB_KEDIP && !scan.kedip) { setMsg('TATAP KAMERA & KEDIPKAN MATA', 'wait'); return; }
+  if (scan.buf.length < 3) return;
+  kirimWajah();
+}
+function kirimWajah() {
+  scan.kirim = true; setMsg('MEMVERIFIKASI WAJAH...', 'wait');
+  panggil('verifyFace', [token, rata(scan.buf), ambilSnapshot()])
+    .then(function (res) {
+      scan.kirim = false; renderRiwayat(res.history);
+      if (res.ok) wajahDiterima(res);
+      else if (res.expired || res.reset) akhiriFace(res.message || 'AKSES DITOLAK', res.locked);
+      else {
+        setMsg(res.message || 'WAJAH TIDAK DIKENALI', 'bad'); efekSalah();
+        beep(180, 0.25, 'square', 0); beep(150, 0.35, 'square', 0.3); bicara('WAJAH TIDAK DIKENALI');
+        scan.buf = []; scan.kedip = false; scan.baseline = 0; scan.start = Date.now();
+      }
+    })
+    .catch(function () { scan.kirim = false; akhiriFace('AKSES DITOLAK (ERROR SISTEM)'); });
+}
+function wajahDiterima(res) {
+  mode = 'PIN'; token = null; updateLabel(); aturTombol();
+  setMsg('AKSES DITERIMA', 'ok'); $('sub').textContent = res.nama ? ('SELAMAT DATANG, ' + res.nama.toUpperCase()) : '';
+  efekBenar(); beep(660, 0.15, 'sine', 0); beep(880, 0.25, 'sine', 0.18);
+  bicara('AKSES DITERIMA, AKSES DITERIMA, TERIMAKASIH');
+  resetAll(6000);
+}
+function akhiriFace(pesan, locked) {
+  mode = 'PIN'; token = null; pin = ''; render(); updateLabel(); aturTombol();
+  setMsg(pesan, 'bad'); efekSalah();
+  beep(180, 0.25, 'square', 0); beep(150, 0.35, 'square', 0.3);
+  bicara('AKSES DITOLAK'); resetAll(locked ? 5000 : 3500);
+}
+
+/* ===================== KEYPAD (LANGKAH 1) ===================== */
+function render() { elPin.textContent = '●'.repeat(pin.length); }
+function setMsg(t, c) { elMsg.textContent = t || ''; elMsg.className = 'msg ' + (c || ''); }
+function updateLabel() { $('label').textContent = mode === 'FACE' ? 'LANGKAH 2/2 - FACE ID' : 'LANGKAH 1/2 - MASUKKAN PIN 4 DIGIT'; }
+function aturTombol() { keys.forEach(function (k) { k.disabled = busy || (mode === 'FACE' && k.dataset.k !== 'cancel'); }); }
+function setBusy(b) { busy = b; aturTombol(); }
+function resetAll(ms) {
+  clearTimeout(resetTimer);
+  resetTimer = setTimeout(function () { if (mode === 'PIN') { pin = ''; render(); setMsg(''); $('sub').textContent = ''; } }, ms);
+}
+function press(k) {
+  if (mode === 'FACE') { if (k === 'cancel') akhiriFace('FACE ID DIBATALKAN'); return; }
+  if (busy) return;
+  if (/^\d$/.test(k)) {
+    if (elMsg.textContent) { setMsg(''); $('sub').textContent = ''; }
+    if (pin.length < MAX) { pin += k; render(); beep(900, 0.05, 'sine'); }
+  } else if (k === 'clear') { pin = pin.slice(0, -1); render(); }
+  else if (k === 'cancel') { clearTimeout(resetTimer); pin = ''; render(); setMsg(''); $('sub').textContent = ''; }
+  else if (k === 'enter') submit();
+}
+function pinSalah(res) {
+  setMsg((res && res.message) || 'AKSES DITOLAK', 'bad'); efekSalah();
+  beep(180, 0.25, 'square', 0); beep(150, 0.35, 'square', 0.3);
+  bicara((res && res.locked) ? 'AKSES DITOLAK. SISTEM TERKUNCI' : 'AKSES DITOLAK');
+  resetAll(res && res.locked ? 5000 : 2800);
+}
+function submit() {
+  clearTimeout(resetTimer);
+  if (pin.length !== MAX) { setMsg('PIN HARUS 4 DIGIT', 'bad'); efekSalah(); beep(180, 0.25, 'square'); resetAll(1500); return; }
+  setBusy(true); setMsg('MEMVERIFIKASI PIN...', 'wait');
+  const kirimPin = pin;
+  panggil('verifyPin', [kirimPin, ambilSnapshot()])
+    .then(function (res) {
+      setBusy(false); pin = ''; render(); renderRiwayat(res.history);
+      if (res.ok && res.step === 'face') {
+        if (!modelsReady || !kameraOn) { setMsg('FACE ID TIDAK SIAP: CEK KAMERA / MODEL AI', 'bad'); efekSalah(); resetAll(4500); return; }
+        token = res.token; mode = 'FACE';
+        scan = { buf: [], kedip: false, baseline: 0, start: Date.now(), kirim: false };
+        updateLabel(); aturTombol(); setMsg('PIN BENAR - SCAN WAJAH', 'ok');
+        beep(660, 0.12, 'sine'); bicara('PIN BENAR. SILAKAN SCAN WAJAH');
+      } else { pinSalah(res); }
+    })
+    .catch(function () { setBusy(false); pin = ''; render(); pinSalah({ message: 'AKSES DITOLAK (ERROR SISTEM)' }); });
+}
+keys.forEach(function (b) { b.addEventListener('click', function () { press(b.dataset.k); }); });
+document.addEventListener('keydown', function (e) {
+  if (e.target && e.target.tagName === 'INPUT') return;
+  if (/^\d$/.test(e.key)) press(e.key);
+  else if (e.key === 'Backspace') press('clear');
+  else if (e.key === 'Enter') press('enter');
+  else if (e.key === 'Escape') press('cancel');
+});
+
+/* ===================== ADMIN: DAFTAR WAJAH ===================== */
+function setAdminMsg(t, c) { $('admMsg').textContent = t || ''; $('admMsg').className = 'msg ' + (c || ''); }
+function bukaAdmin() {
+  if (mode !== 'PIN' || busy) return;
+  $('keypadArea').style.display = 'none'; $('admin').style.display = 'block';
+  $('admLogin').style.display = 'block'; $('admMenu').style.display = 'none';
+  $('inAdmin').value = ''; setAdminMsg('');
+}
+function tutupAdmin() {
+  adminToken = null; mode = 'PIN'; $('inAdmin').value = '';
+  $('admin').style.display = 'none'; $('keypadArea').style.display = 'block'; updateLabel();
+}
+function renderDaftar(list) {
+  const box = $('admList'); box.textContent = '';
+  const h = document.createElement('div'); h.className = 'label'; h.style.marginTop = '8px';
+  h.textContent = 'WAJAH TERDAFTAR (' + (list ? list.length : 0) + ')'; box.appendChild(h);
+  (list || []).forEach(function (nama) {
+    const row = document.createElement('div'); row.className = 'nm';
+    const s = document.createElement('span'); s.textContent = nama;
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = 'HAPUS';
+    let siap = false;
+    b.addEventListener('click', function () {
+      if (!siap) { siap = true; b.textContent = 'YAKIN?'; setTimeout(function () { siap = false; b.textContent = 'HAPUS'; }, 3000); return; }
+      panggil('hapusWajah', [adminToken, nama]).then(function (res) {
+        if (res.ok) { renderDaftar(res.daftar); setAdminMsg(res.message, 'ok'); muatRiwayat(); } else setAdminMsg(res.message, 'bad');
+      }).catch(function () { setAdminMsg('GAGAL MENGHUBUNGI SERVER', 'bad'); });
+    });
+    row.appendChild(s); row.appendChild(b); box.appendChild(row);
+  });
+}
+$('btnAdmin').addEventListener('click', bukaAdmin);
+$('btnTutupAdmin').addEventListener('click', tutupAdmin);
+$('btnAdmLogin').addEventListener('click', function () {
+  setAdminMsg('MEMERIKSA...', 'wait');
+  panggil('adminLogin', [$('inAdmin').value]).then(function (res) {
+    $('inAdmin').value = '';
+    if (res.ok) {
+      adminToken = res.token; $('admLogin').style.display = 'none'; $('admMenu').style.display = 'block';
+      renderDaftar(res.daftar); setAdminMsg('LOGIN ADMIN BERHASIL', 'ok'); muatRiwayat();
+    } else setAdminMsg(res.message || 'KODE ADMIN SALAH', 'bad');
+  }).catch(function () { setAdminMsg('GAGAL MENGHUBUNGI SERVER', 'bad'); });
+});
+$('btnDaftar').addEventListener('click', function () {
+  const nama = $('inNama').value.trim();
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} .'\-]{1,39}$/u.test(nama)) { setAdminMsg('NAMA 2-40 HURUF/ANGKA', 'bad'); return; }
+  if (!modelsReady || !kameraOn) { setAdminMsg('KAMERA / MODEL AI BELUM SIAP', 'bad'); return; }
+  daftar = { nama: nama, samples: [], last: 0, start: Date.now() };
+  mode = 'ENROLL'; setAdminMsg('TATAP KAMERA, GERAKKAN KEPALA PELAN-PELAN', 'wait');
+});
+function prosesDaftar(r) {
+  const now = Date.now();
+  if (now - daftar.last < 700) return;
+  daftar.last = now;
+  daftar.samples.push(Array.from(r.descriptor).map(function (x) { return Math.round(x * 10000) / 10000; }));
+  setAdminMsg('MENGAMBIL SAMPEL ' + daftar.samples.length + '/' + JUMLAH_SAMPEL, 'wait');
+  if (daftar.samples.length < JUMLAH_SAMPEL) return;
+  mode = 'PIN'; setAdminMsg('MENYIMPAN...', 'wait');
+  panggil('daftarWajah', [adminToken, daftar.nama, daftar.samples, ambilSnapshot()]).then(function (res) {
+    if (res.ok) { setAdminMsg(res.message, 'ok'); renderDaftar(res.daftar); $('inNama').value = ''; muatRiwayat(); }
+    else setAdminMsg(res.message || 'GAGAL MENDAFTAR', 'bad');
+  }).catch(function () { setAdminMsg('GAGAL MENGHUBUNGI SERVER', 'bad'); });
+}
+
+/* ===================== START ===================== */
+render(); muatRiwayat(); mulaiKamera(); muatModel(); loop();
+</script>
+</body>
+</html>
